@@ -2,7 +2,10 @@
   "name": "pressure",
   "main": "src/index.ts",
   "compatibility_date": "2026-01-14",
-  "site": {
-    "bucket": "."
+  "vars": {
+    "ENVIRONMENT": "production"
+  },
+  "assets": {
+    "directory": "."
   }
 }
