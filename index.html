@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>血压健康助手</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body {
+            background-color: #f8fafc;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .status-normal { background-color: #10b981; }
+        .status-pre { background-color: #f59e0b; }
+        .status-mild { background-color: #f97316; }
+        .status-moderate { background-color: #ef4444; }
+        .status-severe { background-color: #7f1d1d; }
+        .status-none { background-color: #e2e8f0; } /* Gray for missing */
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+        
+        .slot-card-active {
+            border-color: #3b82f6 !important;
+            background-color: #eff6ff !important;
+            opacity: 1 !important;
+        }
+
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        /* Calendar Styles */
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 4px;
+        }
+        .day-cell {
+            aspect-ratio: 1 / 1.2;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 4px;
+            border-radius: 8px;
+            border: 1px solid #f1f5f9;
+            background: white;
+            transition: all 0.2s;
+        }
+        .day-cell:active { transform: scale(0.95); background-color: #f8fafc; }
+        .indicator-dot {
+            height: 6px;
+            width: 100%;
+            border-radius: 2px;
+        }
+    </style>
+</head>
+<body class="min-h-screen pb-24">
+
+    <!-- App Header -->
+    <header class="bg-white border-b sticky top-0 z-30 px-4 py-4 shadow-sm">
+        <div class="flex items-center justify-between">
+            <h1 id="app-title" class="text-xl font-bold text-gray-800 flex items-center cursor-pointer select-none">
+                <i data-lucide="activity" class="text-red-500 mr-2"></i>
+                <span id="page-title">血压脉搏助手</span>
+            </h1>
+            <div id="user-display" class="text-xs text-gray-400 font-mono"></div>
+        </div>
+        
+        <!-- GM Console -->
+        <div id="gm-console" class="hidden mt-4 p-3 bg-gray-900 rounded-xl text-white space-y-3 animate-fade-in">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-bold text-yellow-400">GM 控制台</span>
+                <button id="close-gm" class="text-gray-400"><i data-lucide="x" class="w-4 h-4"></i></button>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+                <div class="space-y-1">
+                    <label class="text-[10px] text-gray-400">模拟日期</label>
+                    <input type="date" id="gm-date-input" class="w-full bg-gray-800 border-gray-700 rounded text-xs p-1">
+                </div>
+                <div class="flex flex-col justify-end">
+                    <button id="gm-gen-data" class="bg-yellow-600 hover:bg-yellow-700 text-[10px] py-2 rounded font-bold">模拟一个月数据</button>
+                </div>
+            </div>
+            <p id="gm-status" class="text-[9px] text-gray-500 italic">点击标题5次开启面板</p>
+        </div>
+    </header>
+
+    <!-- Main View (Home) -->
+    <main id="view-home" class="max-w-md mx-auto p-4 space-y-6">
+        <div id="alert-container" class="hidden space-y-2"></div>
+
+        <!-- Input Card -->
+        <div class="bg-white rounded-2xl shadow-sm border p-5 space-y-4" id="input-section">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h2 id="current-slot-title" class="text-lg font-semibold text-gray-700 text-sm">加载中...</h2>
+                    <p id="mode-hint" class="text-[10px] text-blue-500 font-medium hidden">补录模式</p>
+                </div>
+                <div class="text-right">
+                    <span id="current-date-display" class="text-sm text-gray-500 block"></span>
+                    <button id="reset-slot-btn" class="text-[10px] text-gray-400 underline hidden">返回当前</button>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-3 gap-2">
+                <div class="space-y-1">
+                    <label class="text-[10px] font-medium text-gray-500 ml-1 text-center block">高压</label>
+                    <input type="number" id="sys-input" placeholder="0" class="w-full bg-gray-50 border-0 rounded-xl px-2 py-3 text-xl font-bold focus:ring-2 focus:ring-blue-500 transition-all outline-none text-center">
+                </div>
+                <div class="space-y-1">
+                    <label class="text-[10px] font-medium text-gray-500 ml-1 text-center block">低压</label>
+                    <input type="number" id="dia-input" placeholder="0" class="w-full bg-gray-50 border-0 rounded-xl px-2 py-3 text-xl font-bold focus:ring-2 focus:ring-blue-500 transition-all outline-none text-center">
+                </div>
+                <div class="space-y-1">
+                    <label class="text-[10px] font-medium text-gray-500 ml-1 text-center block">脉搏</label>
+                    <input type="number" id="pulse-input" placeholder="0" class="w-full bg-gray-50 border-0 rounded-xl px-2 py-3 text-xl font-bold focus:ring-2 focus:ring-blue-500 transition-all outline-none text-center">
+                </div>
+            </div>
+
+            <div id="analysis-box" class="hidden p-3 rounded-xl flex items-center justify-between text-white">
+                <span class="font-bold text-sm" id="analysis-text"></span>
+                <i data-lucide="info" class="w-4 h-4"></i>
+            </div>
+
+            <button id="save-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl transition-colors shadow-lg shadow-blue-100 flex items-center justify-center space-x-2">
+                <span>保存记录</span>
+                <i data-lucide="check-circle" class="w-5 h-5"></i>
+            </button>
+        </div>
+
+        <!-- Today Summary -->
+        <div class="space-y-3">
+            <div class="flex items-center justify-between ml-1">
+                <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider">今日概览</h3>
+            </div>
+            <div class="grid grid-cols-3 gap-3">
+                <div id="card-morning" class="bg-white p-3 rounded-xl border text-center opacity-50 transition-all cursor-pointer hover:border-blue-300">
+                    <p class="text-xs text-gray-400">早晨</p>
+                    <p class="font-bold text-gray-800 pt-1 text-sm" id="val-morning">--</p>
+                    <div id="label-morning" class="text-[9px] py-0.5 rounded text-gray-400 bg-gray-100 mt-1">无记录</div>
+                </div>
+                <div id="card-afternoon" class="bg-white p-3 rounded-xl border text-center opacity-50 transition-all cursor-pointer hover:border-blue-300">
+                    <p class="text-xs text-gray-400">中午</p>
+                    <p class="font-bold text-gray-800 pt-1 text-sm" id="val-afternoon">--</p>
+                    <div id="label-afternoon" class="text-[9px] py-0.5 rounded text-gray-400 bg-gray-100 mt-1">无记录</div>
+                </div>
+                <div id="card-evening" class="bg-white p-3 rounded-xl border text-center opacity-50 transition-all cursor-pointer hover:border-blue-300">
+                    <p class="text-xs text-gray-400">晚上</p>
+                    <p class="font-bold text-gray-800 pt-1 text-sm" id="val-evening">--</p>
+                    <div id="label-evening" class="text-[9px] py-0.5 rounded text-gray-400 bg-gray-100 mt-1">无记录</div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- History View (Monthly) -->
+    <main id="view-history" class="hidden max-w-md mx-auto p-4 space-y-6">
+        <div id="history-empty" class="hidden text-center py-20 text-gray-400 animate-fade-in">
+            <i data-lucide="database-zap" class="w-12 h-12 mx-auto mb-4 opacity-20"></i>
+            <p>暂无记录</p>
+        </div>
+
+        <div id="history-content" class="space-y-4">
+            <!-- Month Selector -->
+            <div class="flex items-center space-x-2 overflow-x-auto no-scrollbar py-2" id="month-selector"></div>
+
+            <!-- Calendar Grid -->
+            <div class="bg-white rounded-2xl border p-4 shadow-sm space-y-4 animate-fade-in">
+                <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">
+                    <span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span>
+                </div>
+                <div id="calendar-body" class="calendar-grid">
+                    <!-- Days injected here -->
+                </div>
+            </div>
+
+            <!-- Analysis -->
+            <div id="monthly-summary-card" class="bg-white rounded-2xl border p-5 shadow-sm space-y-4 animate-fade-in">
+                <h3 class="font-bold text-gray-800 text-sm flex items-center">
+                    <i data-lucide="line-chart" class="w-4 h-4 mr-2 text-blue-500"></i>
+                    当月分析
+                </h3>
+                <div class="grid grid-cols-3 gap-2">
+                    <div class="bg-gray-50 p-2 rounded-xl text-center">
+                        <p class="text-[10px] text-gray-400">平均高压</p>
+                        <p class="text-lg font-bold text-gray-800" id="avg-sys">--</p>
+                    </div>
+                    <div class="bg-gray-50 p-2 rounded-xl text-center">
+                        <p class="text-[10px] text-gray-400">平均低压</p>
+                        <p class="text-lg font-bold text-gray-800" id="avg-dia">--</p>
+                    </div>
+                    <div class="bg-gray-50 p-2 rounded-xl text-center">
+                        <p class="text-[10px] text-gray-400">平均脉搏</p>
+                        <p class="text-lg font-bold text-gray-800" id="avg-pulse">--</p>
+                    </div>
+                </div>
+                <div class="space-y-2 border-t pt-3">
+                    <p class="text-xs font-bold text-gray-600">健康建议</p>
+                    <ul id="monthly-advice" class="text-[11px] text-gray-500 space-y-1.5 list-disc pl-4 leading-relaxed"></ul>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Detail Modal -->
+    <div id="detail-modal" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-6 hidden">
+        <div class="bg-white w-full max-w-xs rounded-2xl overflow-hidden shadow-2xl animate-fade-in">
+            <div class="bg-gray-50 px-5 py-4 border-b flex justify-between items-center">
+                <h4 id="modal-date" class="font-bold text-gray-700"></h4>
+                <button id="close-modal" class="text-gray-400"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <div class="p-5 space-y-4" id="modal-content">
+                <!-- Detail items injected here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Bottom Nav -->
+    <nav class="fixed bottom-0 left-0 right-0 bg-white border-t px-6 py-2 flex justify-around items-center shadow-lg z-30">
+        <button id="nav-home" class="flex flex-col items-center text-blue-600">
+            <i data-lucide="home" class="w-6 h-6"></i>
+            <span class="text-[10px] mt-1 font-bold">首页记录</span>
+        </button>
+        <button id="nav-history" class="flex flex-col items-center text-gray-400">
+            <i data-lucide="calendar" class="w-6 h-6"></i>
+            <span class="text-[10px] mt-1 font-bold">历史报告</span>
+        </button>
+    </nav>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, collection, query, onSnapshot, updateDoc, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const firebaseConfig = JSON.parse(window.__firebase_config);
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'bp-calendar-tracker';
+
+        let currentUser = null;
+        let allRecords = {}; 
+        let selectedMonth = ''; 
+        let selectedSlotId = null; 
+        let autoSlot = null;
+        let gmOverrideDate = null;
+        let appTitleClickCount = 0;
+
+        const getSlotInfo = (id = null) => {
+            const slots = {
+                morning: { id: 'morning', label: '早晨测量' },
+                afternoon: { id: 'afternoon', label: '中午测量' },
+                evening: { id: 'evening', label: '晚上测量' }
+            };
+            if (id && slots[id]) return slots[id];
+            const now = gmOverrideDate ? new Date(gmOverrideDate) : new Date();
+            const hour = now.getHours();
+            if (hour >= 5 && hour < 12) return slots.morning;
+            if (hour >= 12 && hour < 18) return slots.afternoon;
+            return slots.evening;
+        };
+
+        const getDateKey = (date = null) => {
+            const d = date || (gmOverrideDate ? new Date(gmOverrideDate) : new Date());
+            return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`;
+        };
+
+        const classifyBP = (sys, dia) => {
+            if (!sys || !dia) return null;
+            if (sys >= 180 || dia >= 110) return { label: '重度', class: 'status-severe' };
+            if (sys >= 160 || dia >= 100) return { label: '中度', class: 'status-moderate' };
+            if (sys >= 140 || dia >= 90) return { label: '轻度', class: 'status-mild' };
+            if (sys >= 120 || dia >= 80) return { label: '高值', class: 'status-pre' };
+            return { label: '正常', class: 'status-normal' };
+        };
+
+        // --- Calendar Rendering Logic ---
+        const renderHistoryPage = () => {
+            const historyEmpty = document.getElementById('history-empty');
+            const historyContent = document.getElementById('history-content');
+            const months = Array.from(new Set(Object.keys(allRecords).map(d => d.slice(0, 7)))).sort().reverse();
+            
+            if (months.length === 0) {
+                historyEmpty.classList.remove('hidden');
+                historyContent.classList.add('hidden');
+                return;
+            }
+
+            historyEmpty.classList.add('hidden');
+            historyContent.classList.remove('hidden');
+
+            if (!selectedMonth || !months.includes(selectedMonth)) selectedMonth = months[0];
+
+            // Render Months
+            const monthSelector = document.getElementById('month-selector');
+            monthSelector.innerHTML = months.map(m => `
+                <button onclick="window.selectHistoryMonth('${m}')" 
+                    class="px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all border 
+                    ${selectedMonth === m ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-gray-200 text-gray-500'}">
+                    ${m.replace('-', '年')}月
+                </button>
+            `).join('');
+
+            // Render Calendar
+            const [year, month] = selectedMonth.split('-').map(Number);
+            const firstDay = new Date(year, month - 1, 1).getDay();
+            const daysInMonth = new Date(year, month, 0).getDate();
+            const calendarBody = document.getElementById('calendar-body');
+            calendarBody.innerHTML = '';
+
+            // Empty slots for alignment
+            for (let i = 0; i < firstDay; i++) {
+                calendarBody.innerHTML += `<div class="day-cell opacity-0 pointer-events-none"></div>`;
+            }
+
+            // Days
+            for (let d = 1; d <= daysInMonth; d++) {
+                const dateKey = `${year}-${month.toString().padStart(2, '0')}-${d.toString().padStart(2, '0')}`;
+                const data = allRecords[dateKey] || null;
+                
+                const cell = document.createElement('div');
+                cell.className = `day-cell ${data ? 'cursor-pointer' : 'opacity-40'}`;
+                cell.innerHTML = `
+                    <span class="text-[10px] font-bold text-gray-500">${d}</span>
+                    <div class="space-y-[2px]">
+                        <div class="indicator-dot ${data?.morning?.statusClass || 'status-none'}"></div>
+                        <div class="indicator-dot ${data?.afternoon?.statusClass || 'status-none'}"></div>
+                        <div class="indicator-dot ${data?.evening?.statusClass || 'status-none'}"></div>
+                    </div>
+                `;
+                if (data) cell.onclick = () => showDetail(dateKey, data);
+                calendarBody.appendChild(cell);
+            }
+
+            calculateMonthlySummary(selectedMonth);
+        };
+
+        const showDetail = (date, data) => {
+            const modal = document.getElementById('detail-modal');
+            const content = document.getElementById('modal-content');
+            document.getElementById('modal-date').textContent = date;
+            
+            content.innerHTML = '';
+            ['morning', 'afternoon', 'evening'].forEach(s => {
+                const r = data[s];
+                const label = s === 'morning' ? '早晨' : (s === 'afternoon' ? '中午' : '晚上');
+                if (r) {
+                    content.innerHTML += `
+                        <div class="flex items-center justify-between bg-gray-50 p-3 rounded-xl">
+                            <div>
+                                <p class="text-[10px] text-gray-400 font-bold uppercase">${label}</p>
+                                <p class="text-xl font-black text-gray-800">${r.sys}/${r.dia} <span class="text-xs font-normal">mmHg</span></p>
+                                <p class="text-xs text-gray-500">脉搏: ${r.pulse || '--'} bpm</p>
+                            </div>
+                            <span class="px-2 py-1 rounded-lg text-[10px] font-bold text-white ${r.statusClass}">${r.statusLabel}</span>
+                        </div>
+                    `;
+                } else {
+                    content.innerHTML += `
+                        <div class="flex items-center justify-between border border-dashed p-3 rounded-xl opacity-40">
+                            <p class="text-[10px] text-gray-400 font-bold uppercase">${label}</p>
+                            <p class="text-xs text-gray-400">无记录</p>
+                        </div>
+                    `;
+                }
+            });
+
+            modal.classList.remove('hidden');
+            lucide.createIcons();
+        };
+
+        window.selectHistoryMonth = (m) => {
+            selectedMonth = m;
+            renderHistoryPage();
+        };
+
+        const calculateMonthlySummary = (monthStr) => {
+            let totalSys = 0, totalDia = 0, totalPulse = 0, count = 0, highCount = 0;
+            Object.keys(allRecords).forEach(k => {
+                if (k.startsWith(monthStr)) {
+                    const day = allRecords[k];
+                    ['morning', 'afternoon', 'evening'].forEach(s => {
+                        if (day[s]) {
+                            totalSys += day[s].sys;
+                            totalDia += day[s].dia;
+                            totalPulse += (day[s].pulse || 0);
+                            count++;
+                            if (day[s].sys >= 140 || day[s].dia >= 90) highCount++;
+                        }
+                    });
+                }
+            });
+
+            const avgSys = Math.round(totalSys / count) || '--';
+            const avgDia = Math.round(totalDia / count) || '--';
+            const avgPulse = Math.round(totalPulse / count) || '--';
+
+            document.getElementById('avg-sys').textContent = avgSys;
+            document.getElementById('avg-dia').textContent = avgDia;
+            document.getElementById('avg-pulse').textContent = avgPulse;
+
+            const adviceList = document.getElementById('monthly-advice');
+            const advice = [];
+            if (count > 0) {
+                if (avgSys >= 140 || avgDia >= 90) {
+                    advice.push('本月均值<strong>偏高</strong>，请关注饮食起居并咨询医师。');
+                } else if (avgSys >= 120 || avgDia >= 80) {
+                    advice.push('处于正常高值，建议保持适量运动，低盐饮食。');
+                } else {
+                    advice.push('指标处于理想状态，请继续保持记录。');
+                }
+                if (highCount > 5) advice.push('本月血压波动次数较多，建议保证充足睡眠。');
+            } else {
+                advice.push('暂无足够数据。');
+            }
+            adviceList.innerHTML = advice.map(item => `<li>${item}</li>`).join('');
+        };
+
+        // --- Standard App Logic ---
+        const switchView = (viewName) => {
+            const homeView = document.getElementById('view-home');
+            const historyView = document.getElementById('view-history');
+            const navHome = document.getElementById('nav-home');
+            const navHistory = document.getElementById('nav-history');
+            const pageTitle = document.getElementById('page-title');
+
+            if (viewName === 'home') {
+                homeView.classList.remove('hidden');
+                historyView.classList.add('hidden');
+                navHome.classList.add('text-blue-600');
+                navHome.classList.remove('text-gray-400');
+                navHistory.classList.add('text-gray-400');
+                navHistory.classList.remove('text-blue-600');
+                pageTitle.textContent = '血压脉搏助手';
+            } else {
+                homeView.classList.add('hidden');
+                historyView.classList.remove('hidden');
+                navHome.classList.remove('text-blue-600');
+                navHome.classList.add('text-gray-400');
+                navHistory.classList.add('text-blue-600');
+                navHistory.classList.remove('text-gray-400');
+                pageTitle.textContent = '历史日历报告';
+                renderHistoryPage();
+            }
+        };
+
+        const updateSummary = (data) => {
+            const todayKey = getDateKey();
+            const today = data[todayKey] || null;
+            document.getElementById('current-date-display').textContent = gmOverrideDate ? `[模拟] ${gmOverrideDate}` : new Date().toLocaleDateString();
+
+            ['morning', 'afternoon', 'evening'].forEach(s => {
+                const card = document.getElementById(`card-${s}`);
+                const val = document.getElementById(`val-${s}`);
+                const label = document.getElementById(`label-${s}`);
+                if (today && today[s]) {
+                    card.classList.remove('opacity-50');
+                    card.classList.add('border-blue-100', 'bg-blue-50/20');
+                    val.textContent = `${today[s].sys}/${today[s].dia}`;
+                    label.textContent = today[s].statusLabel;
+                    label.className = `text-[9px] py-0.5 rounded font-bold text-white ${today[s].statusClass}`;
+                } else {
+                    card.classList.add('opacity-50');
+                    card.classList.remove('border-blue-100', 'bg-blue-50/20');
+                    val.textContent = "--";
+                    label.textContent = "无记录";
+                    label.className = "text-[9px] py-0.5 rounded text-gray-400 bg-gray-100 mt-1";
+                }
+            });
+
+            const currentAuto = getSlotInfo().id;
+            const alertContainer = document.getElementById('alert-container');
+            alertContainer.innerHTML = '';
+            let missing = [];
+            if (currentAuto === 'afternoon' && (!today || !today.morning)) missing.push('早晨');
+            if (currentAuto === 'evening') {
+                if (!today || !today.morning) missing.push('早晨');
+                if (!today || !today.afternoon) missing.push('中午');
+            }
+            if (missing.length > 0) {
+                alertContainer.classList.remove('hidden');
+                const div = document.createElement('div');
+                div.className = "bg-orange-50 border border-orange-100 p-3 rounded-xl flex items-start space-x-3 animate-fade-in";
+                div.innerHTML = `<i data-lucide="bell" class="text-orange-500 w-4 h-4 mt-0.5"></i>
+                    <p class="text-xs text-orange-800 font-medium">您今日缺少 <span class="font-bold underline">${missing.join('、')}</span> 的记录。</p>`;
+                alertContainer.appendChild(div);
+                lucide.createIcons();
+            } else { alertContainer.classList.add('hidden'); }
+        };
+
+        const selectSlot = (slotId) => {
+            selectedSlotId = slotId;
+            const info = getSlotInfo(slotId);
+            document.getElementById('current-slot-title').textContent = (slotId !== autoSlot.id ? '补录：' : '') + info.label;
+            ['morning', 'afternoon', 'evening'].forEach(s => {
+                const card = document.getElementById(`card-${s}`);
+                if (s === slotId) card.classList.add('slot-card-active');
+                else card.classList.remove('slot-card-active');
+            });
+            const resetBtn = document.getElementById('reset-slot-btn');
+            const modeHint = document.getElementById('mode-hint');
+            if (slotId !== autoSlot.id) {
+                resetBtn.classList.remove('hidden');
+                modeHint.classList.remove('hidden');
+            } else {
+                resetBtn.classList.add('hidden');
+                modeHint.classList.add('hidden');
+            }
+        };
+
+        const init = async () => {
+            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                await signInWithCustomToken(auth, __initial_auth_token);
+            } else {
+                await signInAnonymously(auth);
+            }
+        };
+
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                currentUser = user;
+                document.getElementById('user-display').textContent = `ID: ${user.uid.slice(0, 6)}`;
+                onSnapshot(collection(db, 'artifacts', appId, 'users', user.uid, 'bp_records'), (snap) => {
+                    allRecords = {};
+                    snap.forEach(doc => allRecords[doc.id] = doc.data());
+                    updateSummary(allRecords);
+                    if (!document.getElementById('view-history').classList.contains('hidden')) {
+                        renderHistoryPage();
+                    }
+                });
+            }
+        });
+
+        // --- Standard Events ---
+        document.getElementById('nav-home').onclick = () => switchView('home');
+        document.getElementById('nav-history').onclick = () => switchView('history');
+        document.getElementById('close-modal').onclick = () => document.getElementById('detail-modal').classList.add('hidden');
+
+        document.getElementById('save-btn').onclick = async () => {
+            if (!currentUser) return;
+            const sys = parseInt(document.getElementById('sys-input').value);
+            const dia = parseInt(document.getElementById('dia-input').value);
+            const pulse = parseInt(document.getElementById('pulse-input').value);
+            if (!sys || !dia) return alert("请填写血压数值");
+            
+            const targetSlot = selectedSlotId || autoSlot.id;
+            const dateKey = getDateKey();
+            const analysis = classifyBP(sys, dia);
+            const docRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'bp_records', dateKey);
+
+            try {
+                const snap = await getDoc(docRef);
+                const currentData = snap.exists() ? snap.data() : {};
+                currentData[targetSlot] = {
+                    sys, dia, pulse,
+                    statusLabel: analysis.label,
+                    statusClass: analysis.class,
+                    time: new Date().toLocaleTimeString()
+                };
+                await setDoc(docRef, currentData);
+                const btn = document.getElementById('save-btn');
+                btn.classList.replace('bg-blue-600', 'bg-green-600');
+                btn.innerText = "已保存";
+                document.getElementById('sys-input').value = '';
+                document.getElementById('dia-input').value = '';
+                document.getElementById('pulse-input').value = '';
+                document.getElementById('analysis-box').classList.add('hidden');
+                setTimeout(() => {
+                    btn.classList.replace('bg-green-600', 'bg-blue-600');
+                    btn.innerHTML = `<span>保存记录</span><i data-lucide="check-circle" class="w-5 h-5 ml-2"></i>`;
+                    lucide.createIcons();
+                    if(selectedSlotId && selectedSlotId !== autoSlot.id) resetToAuto();
+                }, 1500);
+            } catch (err) { console.error(err); }
+        };
+
+        const resetToAuto = () => {
+            autoSlot = getSlotInfo();
+            selectSlot(autoSlot.id);
+        };
+
+        const mon = () => {
+            const sys = parseInt(document.getElementById('sys-input').value);
+            const dia = parseInt(document.getElementById('dia-input').value);
+            const box = document.getElementById('analysis-box');
+            if (sys > 40 && dia > 20) {
+                const res = classifyBP(sys, dia);
+                document.getElementById('analysis-text').textContent = `判定：${res.label}`;
+                box.className = `p-3 rounded-xl flex items-center justify-between animate-fade-in ${res.class}`;
+                box.classList.remove('hidden');
+            } else { box.classList.add('hidden'); }
+        };
+        document.getElementById('sys-input').oninput = mon;
+        document.getElementById('dia-input').oninput = mon;
+
+        document.getElementById('card-morning').onclick = () => selectSlot('morning');
+        document.getElementById('card-afternoon').onclick = () => selectSlot('afternoon');
+        document.getElementById('card-evening').onclick = () => selectSlot('evening');
+        document.getElementById('reset-slot-btn').onclick = resetToAuto;
+
+        // GM Panel logic
+        document.getElementById('app-title').onclick = () => {
+            appTitleClickCount++;
+            if (appTitleClickCount >= 5) {
+                document.getElementById('gm-console').classList.toggle('hidden');
+                appTitleClickCount = 0;
+                lucide.createIcons();
+            }
+        };
+        document.getElementById('close-gm').onclick = () => document.getElementById('gm-console').classList.add('hidden');
+        document.getElementById('gm-date-input').onchange = (e) => {
+            gmOverrideDate = e.target.value;
+            autoSlot = getSlotInfo();
+            selectSlot(autoSlot.id);
+            updateSummary(allRecords);
+        };
+        document.getElementById('gm-gen-data').onclick = async () => {
+            if (!currentUser) return;
+            const batch = writeBatch(db);
+            const status = document.getElementById('gm-status');
+            status.textContent = "生成中...";
+            for (let i = 0; i < 30; i++) {
+                const d = new Date();
+                d.setDate(d.getDate() - i);
+                const key = `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`;
+                const rec = {};
+                ['morning', 'afternoon', 'evening'].forEach(s => {
+                    if (Math.random() > 0.3) {
+                        const sys = Math.floor(Math.random() * (160 - 110) + 110);
+                        const dia = Math.floor(Math.random() * (100 - 70) + 70);
+                        const cl = classifyBP(sys, dia);
+                        rec[s] = { sys, dia, pulse: 75, statusLabel: cl.label, statusClass: cl.class };
+                    }
+                });
+                batch.set(doc(db, 'artifacts', appId, 'users', currentUser.uid, 'bp_records', key), rec);
+            }
+            await batch.commit();
+            status.textContent = "生成成功！";
+        };
+
+        init();
+        autoSlot = getSlotInfo();
+        selectSlot(autoSlot.id);
+        document.getElementById('current-date-display').textContent = new Date().toLocaleDateString();
+        lucide.createIcons();
+    </script>
+</body>
+</html>
