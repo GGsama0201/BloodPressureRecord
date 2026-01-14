@@ -283,12 +283,7 @@
             allRecords = loadRecords();
             updateSummary(allRecords);
             console.log('[LocalDB] User initialized, records loaded:', allRecords);
-        }; 
-        let selectedMonth = ''; 
-        let selectedSlotId = null; 
-        let autoSlot = null;
-        let gmOverrideDate = null;
-        let appTitleClickCount = 0;
+        };
 
         const getSlotInfo = (id = null) => {
             const slots = {
