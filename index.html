@@ -6,6 +6,24 @@
     <title>血压健康助手</title>
     <script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
+    <script>
+        // Firebase Configuration - Initialize BEFORE any other scripts
+        // 请替换为你自己的 Firebase 项目配置
+        window.__firebase_config = {
+            apiKey: "AIzaSyA7W7KkX7FJZQE6tKsQxW2eMb7QT6a7y7s",
+            authDomain: "pressure-tracker-1a9d1.firebaseapp.com",
+            projectId: "pressure-tracker-1a9d1",
+            storageBucket: "pressure-tracker-1a9d1.appspot.com",
+            messagingSenderId: "123456789",
+            appId: "1:123456789:web:abcdef1234567890"
+        };
+        
+        // Make it accessible to module script
+        window.__app_id = 'bp-calendar-tracker';
+        
+        console.log('[Config] Firebase config loaded:', window.__firebase_config);
+        console.log('[Config] App ID:', window.__app_id);
+    </script>
     <style>
         body {
             background-color: #f8fafc;
@@ -232,18 +250,40 @@
     </nav>
 
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, collection, query, onSnapshot, updateDoc, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        const firebaseConfig = JSON.parse(window.__firebase_config);
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'bp-calendar-tracker';
-
+        // ============= LOCAL STORAGE VERSION (No Firebase) =============
+        // 所有数据存储在浏览器本地存储中
+        
         let currentUser = null;
-        let allRecords = {}; 
+        let allRecords = {};
+        let selectedMonth = '';
+        let selectedSlotId = null;
+        let autoSlot = null;
+        let gmOverrideDate = null;
+        let appTitleClickCount = 0;
+
+        // 本地存储键名
+        const STORAGE_KEY = 'bp-records';
+        const USER_ID = 'local-user-' + Math.random().toString(36).slice(2, 8);
+
+        // 从本地存储加载数据
+        const loadRecords = () => {
+            const data = localStorage.getItem(STORAGE_KEY);
+            return data ? JSON.parse(data) : {};
+        };
+
+        // 保存数据到本地存储
+        const saveRecords = (records) => {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+        };
+
+        // 初始化本地用户
+        const initLocalUser = async () => {
+            currentUser = { uid: USER_ID };
+            document.getElementById('user-display').textContent = `ID: ${USER_ID.slice(0, 6)}`;
+            allRecords = loadRecords();
+            updateSummary(allRecords);
+            console.log('[LocalDB] User initialized, records loaded:', allRecords);
+        }; 
         let selectedMonth = ''; 
         let selectedSlotId = null; 
         let autoSlot = null;
@@ -513,27 +553,11 @@
         };
 
         const init = async () => {
-            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                await signInWithCustomToken(auth, __initial_auth_token);
-            } else {
-                await signInAnonymously(auth);
-            }
+            await initLocalUser();
         };
 
-        onAuthStateChanged(auth, (user) => {
-            if (user) {
-                currentUser = user;
-                document.getElementById('user-display').textContent = `ID: ${user.uid.slice(0, 6)}`;
-                onSnapshot(collection(db, 'artifacts', appId, 'users', user.uid, 'bp_records'), (snap) => {
-                    allRecords = {};
-                    snap.forEach(doc => allRecords[doc.id] = doc.data());
-                    updateSummary(allRecords);
-                    if (!document.getElementById('view-history').classList.contains('hidden')) {
-                        renderHistoryPage();
-                    }
-                });
-            }
-        });
+        // 替换原有的 onAuthStateChanged 逻辑
+        // 现在直接初始化用户
 
         // --- Standard Events ---
         document.getElementById('nav-home').onclick = () => switchView('home');
@@ -550,18 +574,19 @@
             const targetSlot = selectedSlotId || autoSlot.id;
             const dateKey = getDateKey();
             const analysis = classifyBP(sys, dia);
-            const docRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'bp_records', dateKey);
 
             try {
-                const snap = await getDoc(docRef);
-                const currentData = snap.exists() ? snap.data() : {};
+                // 从本地存储获取当天的数据
+                const currentData = allRecords[dateKey] || {};
                 currentData[targetSlot] = {
                     sys, dia, pulse,
                     statusLabel: analysis.label,
                     statusClass: analysis.class,
                     time: new Date().toLocaleTimeString()
                 };
-                await setDoc(docRef, currentData);
+                allRecords[dateKey] = currentData;
+                saveRecords(allRecords);
+                
                 const btn = document.getElementById('save-btn');
                 btn.classList.replace('bg-blue-600', 'bg-green-600');
                 btn.innerText = "已保存";
@@ -620,9 +645,9 @@
         };
         document.getElementById('gm-gen-data').onclick = async () => {
             if (!currentUser) return;
-            const batch = writeBatch(db);
             const status = document.getElementById('gm-status');
             status.textContent = "生成中...";
+            
             for (let i = 0; i < 30; i++) {
                 const d = new Date();
                 d.setDate(d.getDate() - i);
@@ -636,10 +661,13 @@
                         rec[s] = { sys, dia, pulse: 75, statusLabel: cl.label, statusClass: cl.class };
                     }
                 });
-                batch.set(doc(db, 'artifacts', appId, 'users', currentUser.uid, 'bp_records', key), rec);
+                allRecords[key] = rec;
             }
-            await batch.commit();
+            saveRecords(allRecords);
+            updateSummary(allRecords);
+            renderHistoryPage();
             status.textContent = "生成成功！";
+            console.log('[GM] Generated mock data:', allRecords);
         };
 
         init();
