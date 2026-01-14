@@ -1,16 +1,8 @@
 {
   "name": "pressure",
-  "type": "javascript",
   "main": "src/index.ts",
   "compatibility_date": "2026-01-14",
-  "compatibility_flags": ["nodejs_compat"],
   "site": {
     "bucket": "."
-  },
-  "env": {
-    "production": {
-      "route": "example.com/*",
-      "zone_id": "your_zone_id"
-    }
   }
 }
