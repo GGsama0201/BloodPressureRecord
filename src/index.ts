@@ -2,30 +2,23 @@ export default {
   async fetch(request: Request, env: any, ctx: any) {
     try {
       const url = new URL(request.url);
-      const pathname = url.pathname;
+      const pathname = url.pathname === '/' ? '/index.html' : url.pathname;
 
-      // Serve index.html for root path
-      if (pathname === '/' || pathname === '') {
-        const htmlResponse = await fetch(new URL('./index.html', import.meta.url));
-        if (htmlResponse.ok) {
-          return new Response(htmlResponse.body, {
-            headers: { 'Content-Type': 'text/html; charset=utf-8' }
-          });
+      // Use ASSETS binding to serve static files
+      if (env.ASSETS) {
+        const assetResponse = await env.ASSETS.fetch(new Request(new URL(pathname, request.url), request));
+        if (assetResponse.status !== 404) {
+          return assetResponse;
         }
-        return new Response('index.html not found', { status: 404 });
       }
 
-      // Try to serve static files from the build directory
-      try {
-        const fileResponse = await fetch(new URL(`.${pathname}`, import.meta.url));
-        if (fileResponse.ok) {
-          return fileResponse;
+      // Fallback: serve index.html for root path
+      if (url.pathname === '/' || url.pathname === '') {
+        if (env.ASSETS) {
+          return await env.ASSETS.fetch(new Request(new URL('/index.html', request.url), request));
         }
-      } catch (e) {
-        // File not found
       }
 
-      // Return 404 for other requests
       return new Response('Not Found', { status: 404 });
     } catch (error) {
       console.error('Error:', error);
