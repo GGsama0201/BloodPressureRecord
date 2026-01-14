@@ -1,0 +1,13 @@
+{
+  "name": "blood-pressure-record",
+  "type": "javascript",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-01-14",
+  "compatibility_flags": ["nodejs_compat"],
+  "env": {
+    "production": {
+      "route": "example.com/*",
+      "zone_id": "your_zone_id"
+    }
+  }
+}
