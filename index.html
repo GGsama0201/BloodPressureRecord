@@ -581,6 +581,7 @@
                 };
                 allRecords[dateKey] = currentData;
                 saveRecords(allRecords);
+                updateSummary(allRecords);  // 更新显示
                 
                 const btn = document.getElementById('save-btn');
                 btn.classList.replace('bg-blue-600', 'bg-green-600');
